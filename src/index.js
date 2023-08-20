@@ -11,6 +11,7 @@ import { createCamera, createRenderer, runApp, updateLoadingProgressBar, getDefa
 import Leaves from "./assets/leaves.jpg"
 import vertexShader from "./shaders/vertex.glsl"
 import fragmentShader from "./shaders/fragment.glsl"
+import bgFragmentShader from "./shaders/bf_fragment.glsl"
 import Diamond from "./assets/diamond.glb"
 
 global.THREE = THREE
@@ -26,7 +27,8 @@ const params = {
 }
 const uniforms = {
   ...getDefaultUniforms(),
-  envMap: { value: null }
+  envMap: { value: null },
+  backfaceMap: { value: null }
 }
 
 
@@ -75,7 +77,13 @@ let app = {
     this.controls.enableDamping = true
     // this.controls.enableZoom = false
 
+    // for rendering just the background texture
     this.envFbo = new THREE.WebGLRenderTarget(
+      window.innerWidth * window.devicePixelRatio,
+      window.innerHeight * window.devicePixelRatio
+    )
+    // for rendering the back face normals
+    this.bfFbo = new THREE.WebGLRenderTarget(
       window.innerWidth * window.devicePixelRatio,
       window.innerHeight * window.devicePixelRatio
     )
@@ -97,13 +105,18 @@ let app = {
 
     // add the diamond
     uniforms.envMap.value = this.envFbo.texture
+    uniforms.backfaceMap.value = this.bfFbo.texture
     this.refractionMaterial = new THREE.ShaderMaterial({
       vertexShader: vertexShader,
       fragmentShader: fragmentShader,
       uniforms: uniforms
     })
+    this.backfaceMaterial = new THREE.ShaderMaterial({
+      vertexShader: vertexShader,
+      fragmentShader: bgFragmentShader,
+      side: THREE.BackSide
+    })
     let { model } = await this.loadModel(Diamond)
-    model.children[0].material = this.refractionMaterial
     this.model = model.children[0]
     scene.add(this.model)
 
@@ -148,14 +161,21 @@ let app = {
     renderer.setRenderTarget(this.envFbo)
     renderer.render(scene, orthoCamera)
 
+    // render cube backfaces to fbo
+    this.model.material = this.backfaceMaterial
+    renderer.setRenderTarget(this.bfFbo)
+    renderer.clearDepth()
+    renderer.render(scene, camera)
+
     // render env to screen
     renderer.setRenderTarget(null)
     renderer.render(scene, orthoCamera)
     renderer.clearDepth()
 
-    this.model.rotation.y += interval
+    this.model.rotation.y += interval * 0.5
 
     // render diamond
+    this.model.material = this.refractionMaterial
     renderer.render(scene, camera)
   },
   resize() {
